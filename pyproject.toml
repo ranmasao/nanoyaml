@@ -1,13 +1,21 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nanoyaml"
 version = "0.1.0"
 description = "A small deterministic parser and emitter for a restricted YAML subset."
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+authors = [{ name = "Daniil Romanov" }]
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.urls]
+Repository = "https://github.com/ranmasao/nanoyaml"
+Issues = "https://github.com/ranmasao/nanoyaml/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.9"]

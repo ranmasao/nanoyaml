@@ -1,0 +1,3 @@
+include DESIGN_HISTORY.md
+include LICENSE
+include tools/*.py
