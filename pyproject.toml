@@ -12,6 +12,12 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.9"]
 
+[tool.setuptools]
+packages = ["nanoyaml"]
+
+[tool.setuptools.package-dir]
+nanoyaml = "."
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".."]
