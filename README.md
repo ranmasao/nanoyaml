@@ -7,19 +7,26 @@ variation.
 
 ## Contract
 
-Supported values are non-empty mappings with string keys, non-empty sequences,
-double-quoted strings, and integers. Mapping insertion order and sequence order
-are preserved. Output uses UTF-8 text, LF newlines, two-space indentation, a
-final newline, quoted strings, decimal integers, and no blank lines or comments.
+Supported values are non-empty mappings with string keys, sequences (including
+empty sequences), double-quoted strings, and integers. Mapping insertion order
+and sequence order are preserved. Output uses UTF-8 text, LF newlines, two-space
+indentation, a final newline, quoted strings, decimal integers, and no blank
+lines or comments. Non-empty sequences are emitted in block form; empty
+sequences are emitted as `[]`.
 
-Input accepts blank and whitespace-only physical lines, including leading,
-trailing, and inter-element lines. `loads()` ignores those lines but diagnostics
+Input accepts blank and whitespace-only physical lines made from spaces and
+tabs, including leading, trailing, and inter-element lines. Physical lines are
+separated only by LF, CRLF, or CR. `loads()` ignores blank lines but diagnostics
 retain their original physical line numbers. A whitespace-only document is
 still rejected.
 
-The parser intentionally rejects comments, flow collections, unquoted strings,
-implicit scalar typing, floats, anchors, aliases, tags, directives, multiline
-scalars, and empty collections. NanoYAML is not a general YAML implementation.
+In addition to block sequences, the parser accepts JSON-compatible flow sequence
+spelling, including nested sequences, when it fits on one physical line. Flow
+mappings remain unsupported. The parser intentionally rejects comments,
+unquoted strings, implicit scalar typing, floats, anchors, aliases, tags,
+directives, multiline scalars, multiline flow sequences, and empty mappings.
+NanoYAML remains intentionally much smaller than YAML and is not a general YAML
+implementation.
 
 ## API
 

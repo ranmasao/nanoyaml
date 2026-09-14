@@ -70,10 +70,10 @@ diagnostic locations retain their original physical line numbers. A document
 containing only whitespace is still empty and is rejected.
 
 The format intentionally rejects anchors and aliases, tags, directives, flow
-collections, implicit scalar typing, unquoted strings, floating-point values,
-timestamps, multiline scalar styles, merge keys, comments, external includes,
-empty collections, and arbitrary object serialization. These are non-goals,
-not missing compatibility work.
+mappings, implicit scalar typing, unquoted strings, floating-point values,
+timestamps, multiline scalar styles, multiline flow collections, merge keys,
+comments, external includes, empty mappings, and arbitrary object
+serialization. These are non-goals, not missing compatibility work.
 
 ## Bootstrap milestones
 
@@ -114,6 +114,22 @@ used the parser in validation where useful. Inventory schema ownership stayed
 with corpus analysis. The resulting boundary was made available to curated
 lexical artifacts, RatIL fixtures, and other consumers whose data shapes fit
 the restricted contract.
+
+## 0.2.0 - Flow sequences and empty sequences
+
+Real consumer friction with machine-authored sequence syntax motivated this
+extension. NanoYAML 0.2.0 adds empty sequences and accepts JSON-compatible flow
+sequence input.
+
+The standard-library `json` decoder is only a constrained syntactic helper;
+NanoYAML validates the resulting values and does not inherit the JSON data
+model. Flow mappings, empty mappings, booleans, null, floats, implicit or plain
+scalars, and other YAML features remain unsupported.
+
+Canonical output for every value representable in 0.1.0 remains byte-for-byte
+unchanged, except where 0.1.0 emitted characters that YAML requires to be
+escaped. Non-empty sequences still emit in block form, while empty sequences
+canonically use `[]`.
 
 ## Relationship to corpus analysis
 

@@ -11,10 +11,28 @@ class NanoYAMLError(ValueError):
     """Raised when a value or document is outside the NanoYAML contract."""
 
 
+def _leading_horizontal_whitespace(value: str) -> str:
+    index = 0
+    while index < len(value) and value[index] in " \t":
+        index += 1
+    return value[index:]
+
+
+def _only_horizontal_whitespace(value: str) -> bool:
+    return all(character in " \t" for character in value)
+
+
 def _quoted(value: str, path: str) -> str:
     if any(0xD800 <= ord(character) <= 0xDFFF for character in value):
         raise NanoYAMLError(f"unsupported surrogate in string at {path}")
-    return json.dumps(value, ensure_ascii=False)
+    encoded = json.dumps(value, ensure_ascii=False)
+    return "".join(
+        f"\\u{ord(character):04X}"
+        if (0x007F <= ord(character) <= 0x009F and ord(character) != 0x0085)
+        or ord(character) in (0xFFFE, 0xFFFF)
+        else character
+        for character in encoded
+    )
 
 
 def _validate(value: Any, path: str, active: set[int]) -> None:
@@ -45,8 +63,6 @@ def _validate(value: Any, path: str, active: set[int]) -> None:
         identity = id(value)
         if identity in active:
             raise NanoYAMLError(f"cyclic container at {path}")
-        if not value:
-            raise NanoYAMLError(f"empty sequence at {path}")
         active.add(identity)
         try:
             for index, child in enumerate(value):
@@ -66,9 +82,14 @@ def _render(value: Any, indent: int, sequence_item: bool = False) -> list[str]:
             prefix = "- " if sequence_item and index == 0 else ""
             line = f'{" " * key_indent}{prefix}{_quoted(key, "<key>")}:'
             if isinstance(child, (dict, list)):
-                lines.append(line)
-                child_indent = key_indent + (4 if sequence_item and index == 0 else 2)
-                lines.extend(_render(child, child_indent))
+                if isinstance(child, list) and not child:
+                    lines.append(f"{line} []")
+                else:
+                    lines.append(line)
+                    child_indent = key_indent + (
+                        4 if sequence_item and index == 0 else 2
+                    )
+                    lines.extend(_render(child, child_indent))
             else:
                 scalar = (
                     str(child)
@@ -83,6 +104,8 @@ def _render(value: Any, indent: int, sequence_item: bool = False) -> list[str]:
             if isinstance(child, (dict, list)):
                 if isinstance(child, dict):
                     lines.extend(_render(child, indent, True))
+                elif not child:
+                    lines.append(f"{spaces}- []")
                 else:
                     lines.append(f"{spaces}-")
                     lines.extend(_render(child, indent + 2))
@@ -109,16 +132,20 @@ class _Parser:
     def __init__(self, text: str) -> None:
         if not isinstance(text, str):
             raise TypeError("nanoyaml.loads() expects str")
-        raw_lines = text.splitlines()
-        if not raw_lines or all(not line.strip() for line in raw_lines):
+        raw_lines = re.split(r"\r\n|\r|\n", text)
+        if not raw_lines or all(
+            _only_horizontal_whitespace(line) for line in raw_lines
+        ):
             raise NanoYAMLError("line 1: empty document")
         self.lines: list[tuple[int, int, str]] = []
         for number, line in enumerate(raw_lines, 1):
-            if not line.strip():
+            if _only_horizontal_whitespace(line):
                 continue
-            if "\t" in line[: len(line) - len(line.lstrip(" \t"))]:
+            indent = 0
+            while indent < len(line) and line[indent] == " ":
+                indent += 1
+            if indent < len(line) and line[indent] == "\t":
                 raise NanoYAMLError(f"line {number}: tabs are invalid indentation")
-            indent = len(line) - len(line.lstrip(" "))
             self.lines.append((number, indent, line[indent:]))
         if not self.lines:
             raise NanoYAMLError("line 1: empty document")
@@ -227,7 +254,8 @@ class _Parser:
         key, end = self.quoted(content, number)
         if end >= len(content) or content[end] != ":":
             self.fail(number, "malformed mapping entry")
-        return key, content[end + 1 :].lstrip() if content[end + 1 :].strip() else ""
+        rest = _leading_horizontal_whitespace(content[end + 1 :])
+        return key, rest if rest else ""
 
     def value(self, rest: str, number: int, child_indent: int) -> Any:
         self.index += 1
@@ -242,7 +270,9 @@ class _Parser:
             )
         return self.block(child_indent)
 
-    def scalar(self, value: str, number: int) -> str | int:
+    def scalar(self, value: str, number: int) -> Any:
+        if value.startswith("["):
+            return self.flow_sequence(value, number)
         if value.startswith('"'):
             parsed, end = self.quoted(value, number)
             if end != len(value):
@@ -251,6 +281,47 @@ class _Parser:
         if re.fullmatch(r"0|-?[1-9][0-9]*", value):
             return int(value)
         self.fail(number, "unsupported or invalid scalar")
+
+    def flow_sequence(self, value: str, number: int) -> list[Any]:
+        def parse_int(raw: str) -> int:
+            if not re.fullmatch(r"0|-?[1-9][0-9]*", raw):
+                raise ValueError("unsupported integer")
+            return int(raw)
+
+        def reject_number(raw: str) -> Any:
+            raise ValueError(f"unsupported number {raw}")
+
+        decoder = json.JSONDecoder(
+            parse_int=parse_int,
+            parse_float=reject_number,
+            parse_constant=reject_number,
+        )
+        try:
+            parsed, end = decoder.raw_decode(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            self.fail(number, "malformed flow sequence")
+        if end != len(value):
+            self.fail(number, "trailing content after flow sequence")
+        if not isinstance(parsed, list):
+            self.fail(number, "flow value must be a sequence")
+
+        def validate(member: Any) -> None:
+            if isinstance(member, bool):
+                self.fail(number, "unsupported bool in flow sequence")
+            if isinstance(member, str):
+                if any(0xD800 <= ord(character) <= 0xDFFF for character in member):
+                    self.fail(number, "unsupported surrogate in flow sequence")
+                return
+            if isinstance(member, int):
+                return
+            if isinstance(member, list):
+                for nested in member:
+                    validate(nested)
+                return
+            self.fail(number, "unsupported value in flow sequence")
+
+        validate(parsed)
+        return parsed
 
     def quoted(self, value: str, number: int) -> tuple[str, int]:
         try:

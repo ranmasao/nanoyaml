@@ -16,10 +16,187 @@ def test_canonical_values_round_trip_byte_identically():
         assert nanoyaml.dumps(nanoyaml.loads(encoded)) == encoded
 
 
+def test_0_1_0_canonical_output_is_preserved():
+    cases = [
+        ({"key": "value"}, '"key": "value"\n'),
+        (
+            {"outer": {"inner": {"value": "text"}}},
+            '"outer":\n  "inner":\n    "value": "text"\n',
+        ),
+        (
+            {"items": ["one", 0, -1]},
+            '"items":\n  - "one"\n  - 0\n  - -1\n',
+        ),
+        (
+            {"items": [{"name": "A"}, {"name": "B"}]},
+            '"items":\n  - "name": "A"\n  - "name": "B"\n',
+        ),
+        (
+            {"items": [[1, 2], ["three"]]},
+            '"items":\n  -\n    - 1\n    - 2\n  -\n    - "three"\n',
+        ),
+        (
+            {"text": 'quote " slash \\ newline\n tab\t'},
+            '"text": "quote \\" slash \\\\ newline\\n tab\\t"\n',
+        ),
+        ({"text": "Привет ☃"}, '"text": "Привет ☃"\n'),
+        ({"zero": 0, "negative": -2026}, '"zero": 0\n"negative": -2026\n'),
+    ]
+    for value, expected in cases:
+        assert nanoyaml.dumps(value) == expected
+
+
 def test_accepted_noncanonical_spelling_is_canonicalized():
     parsed = nanoyaml.loads('"key":   "value"\r\n')
     assert parsed == {"key": "value"}
     assert nanoyaml.dumps(parsed) == '"key": "value"\n'
+
+
+def test_empty_sequences_are_supported_and_canonical():
+    value = {"items": [], "nested": {"empty": []}}
+    assert nanoyaml.loads(nanoyaml.dumps(value)) == value
+    assert nanoyaml.dumps(value) == (
+        '"items": []\n'
+        '"nested":\n'
+        '  "empty": []\n'
+    )
+
+
+def test_empty_sequences_inside_sequences_are_canonical():
+    value = {"items": [[], ["A"]]}
+    assert nanoyaml.loads(nanoyaml.dumps(value)) == value
+    assert nanoyaml.dumps(value) == '"items":\n  - []\n  -\n    - "A"\n'
+
+
+def test_flow_sequences_load_and_canonicalize_to_block_form():
+    text = '"items": [ "A" , "B", 17, -2, 0 ]\n'
+    assert nanoyaml.loads(text) == {"items": ["A", "B", 17, -2, 0]}
+    assert nanoyaml.dumps(nanoyaml.loads(text)) == (
+        '"items":\n  - "A"\n  - "B"\n  - 17\n  - -2\n  - 0\n'
+    )
+
+
+def test_nested_flow_sequences_load():
+    assert nanoyaml.loads('"items": [["A"], [], ["B", 17]]\n') == {
+        "items": [["A"], [], ["B", 17]]
+    }
+
+
+def test_flow_sequences_inside_block_sequences_load():
+    text = '"outer":\n  - ["A", "B"]\n  - ["C"]\n'
+    assert nanoyaml.loads(text) == {"outer": [["A", "B"], ["C"]]}
+
+
+def test_flow_sequence_surrogate_escapes_are_rejected():
+    for escaped in (r"\uD800", r"\uDE00"):
+        with pytest.raises(nanoyaml.NanoYAMLError, match=r"line 1"):
+            nanoyaml.loads(f'"items": ["{escaped}"]\n')
+
+
+def test_empty_sequence_in_mapping_sequence_item_has_canonical_layout():
+    value = {"items": [{"name": "A", "dependencies": []}]}
+    expected = '"items":\n  - "name": "A"\n    "dependencies": []\n'
+    assert nanoyaml.dumps(value) == expected
+    assert nanoyaml.loads(expected) == value
+
+
+def test_flow_sequence_rejects_all_trailing_content():
+    for character in (
+        " ",
+        "\t",
+        "\x0b",
+        "\x0c",
+        "\u00a0",
+        "\u0085",
+        "\u2028",
+        "\u2029",
+    ):
+        with pytest.raises(nanoyaml.NanoYAMLError):
+            nanoyaml.loads(f'"items": ["A"]{character}\n')
+
+
+def test_unicode_line_separator_characters_are_quoted_content():
+    value = {"text": "A\u0085B\u2028C\u2029D"}
+    text = '"text": "A\u0085B\u2028C\u2029D"\n'
+    assert nanoyaml.loads(text) == value
+    assert nanoyaml.dumps(value) == text
+
+
+def test_raw_control_characters_are_rejected_but_escaped_controls_are_valid():
+    for character in ("\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x00"):
+        with pytest.raises(nanoyaml.NanoYAMLError):
+            nanoyaml.loads(f'"key": {character}\n')
+        with pytest.raises(nanoyaml.NanoYAMLError):
+            nanoyaml.loads(f'"key": "before{character}after"\n')
+    assert nanoyaml.loads('"key": "before\\u0000after"\n') == {
+        "key": "before\x00after"
+    }
+
+
+def test_yaml_forbidden_output_characters_are_escaped_without_ascii_mode():
+    value = {"text": "\x7f\x80\x84\x86\x9f\ufffe\uffff Привет ☃"}
+    assert nanoyaml.dumps(value) == (
+        '"text": "\\u007F\\u0080\\u0084\\u0086\\u009F\\uFFFE\\uFFFF '
+        'Привет ☃"\n'
+    )
+
+
+def test_escaped_quoted_characters_load_and_canonicalize():
+    text = '"text": "\\u007f\\u0080\\u009f\\ufffe\\uffff"\n'
+    assert nanoyaml.loads(text) == {
+        "text": "\x7f\x80\x9f\ufffe\uffff"
+    }
+    assert nanoyaml.dumps(nanoyaml.loads(text)) == (
+        '"text": "\\u007F\\u0080\\u009F\\uFFFE\\uFFFF"\n'
+    )
+
+
+def test_raw_quoted_characters_are_canonicalized_when_required():
+    value = {"text": "raw \x7f\x80\x9f\ufffe\uffff"}
+    text = '"text": "raw \x7f\x80\x9f\ufffe\uffff"\n'
+    assert nanoyaml.loads(text) == value
+    assert nanoyaml.dumps(value) == (
+        '"text": "raw \\u007F\\u0080\\u009F\\uFFFE\\uFFFF"\n'
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '"items": [true]\n',
+        '"items": [false]\n',
+        '"items": [null]\n',
+        '"items": [1.0]\n',
+        '"items": [-1.5]\n',
+        '"items": [1e3]\n',
+        '"items": [NaN]\n',
+        '"items": [Infinity]\n',
+        '"items": [-Infinity]\n',
+        '"items": [{"a": 1}]\n',
+        '"items": [["A", true]]\n',
+        '"items": [["A", {"b": 1}]]\n',
+        '"items": [plain]\n',
+        '"items": [\'single\']\n',
+        '"items": [&x "A"]\n',
+        '"items": [*x]\n',
+        '"items": [!!str "A"]\n',
+        '"items": ["A",]\n',
+        '"items": [, "A"]\n',
+        '"items": ["A",, "B"]\n',
+        '"items": ["A" "B"]\n',
+        '"items": ["A"\n',
+        '"items": ["A"] trailing\n',
+        '"items": ["A": "B"]\n',
+        r'"items": ["bad\q"]' + "\n",
+        '"items": ["unterminated]\n',
+        '"items": [-0]\n',
+        '"items": [01]\n',
+        '"items": [-01]\n',
+    ],
+)
+def test_flow_sequences_reject_values_and_syntax_outside_contract(text):
+    with pytest.raises(nanoyaml.NanoYAMLError):
+        nanoyaml.loads(text)
 
 
 def test_loads_round_trips_nested_shapes():
@@ -111,7 +288,6 @@ def test_whitespace_only_document_is_rejected():
         '"key": 01\n',
         '"key": 1.0\n',
         '"key": 0x10\n',
-        '"key": [1]\n',
         '"key": {"nested": "value"}\n',
         '"key": &anchor\n',
         '"key": *anchor\n',
@@ -164,8 +340,14 @@ def test_invalid_indentation_and_tabs_are_rejected():
             nanoyaml.loads(text)
 
 
-def test_malformed_root_and_empty_collections_are_rejected():
-    for value in ([], {}, {"empty": []}, {"empty": {}}):
+def test_root_sequences_and_empty_root_mappings_are_rejected():
+    for value in ([], {}):
+        with pytest.raises(nanoyaml.NanoYAMLError):
+            nanoyaml.dumps(value)
+
+
+def test_empty_mappings_remain_rejected():
+    for value in ({"empty": {}}, {"empty": {"nested": {}}}):
         with pytest.raises(nanoyaml.NanoYAMLError):
             nanoyaml.dumps(value)
 
