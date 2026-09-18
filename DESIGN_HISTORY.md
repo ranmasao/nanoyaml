@@ -36,6 +36,8 @@ mapping with string keys
 sequence
 double-quoted string
 integer
+boolean
+null
 ```
 
 Boolean and null values were not added merely for completeness. An extension
@@ -44,7 +46,7 @@ and should be introduced as an explicit contract decision.
 
 The parser and emitter operate on ordinary Python values. Artifact schemas and
 validation remain outside NanoYAML. For example, NanoYAML knows only mappings,
-sequences, strings, and integers; a consumer knows fields such as
+sequences, strings, integers, booleans, and null; a consumer knows fields such as
 `goldcorpus_commit`, `surface`, or `count`.
 
 ## Canonical representation
@@ -124,12 +126,23 @@ sequence input.
 The standard-library `json` decoder is only a constrained syntactic helper;
 NanoYAML validates the resulting values and does not inherit the JSON data
 model. Flow mappings, empty mappings, booleans, null, floats, implicit or plain
-scalars, and other YAML features remain unsupported.
+scalars, and other YAML features remained unsupported in 0.2.0.
 
 Canonical output for every value representable in 0.1.0 remains byte-for-byte
 unchanged, except where 0.1.0 emitted characters that YAML requires to be
 escaped. Non-empty sequences still emit in block form, while empty sequences
 canonically use `[]`.
+
+## 0.2.1 - Boolean and null values
+
+Real structured-output consumer pressure motivated this extension: ordinary
+boolean and null fields could not previously be represented by NanoYAML. Version
+0.2.1 adds Python `True`, `False`, and `None`, with the deliberately restricted
+canonical plain spellings `true`, `false`, and `null`.
+
+NanoYAML still does not implement general YAML implicit typing. Other YAML
+boolean/null spellings remain rejected, as do empty mappings and floats. Existing
+canonical output for all previously supported values remains unchanged.
 
 ## Relationship to corpus analysis
 

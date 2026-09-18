@@ -5,6 +5,7 @@ import pytest
 def test_canonical_values_round_trip_byte_identically():
     values = [
         {"zero": 0, "negative": -12, "positive": 2026},
+        {"running": True, "blocked": False, "ticket": None},
         {"nested": {"first": {"second": "value"}, "last": "end"}},
         {"items": ["one", 0, -1, {"mapping": {"nested": "value"}}]},
         {"items": [{"first": 1, "second": 2}, {"sequence": ["two"]}]},
@@ -74,6 +75,42 @@ def test_flow_sequences_load_and_canonicalize_to_block_form():
     assert nanoyaml.dumps(nanoyaml.loads(text)) == (
         '"items":\n  - "A"\n  - "B"\n  - 17\n  - -2\n  - 0\n'
     )
+
+
+def test_booleans_and_null_load_and_emit_canonically():
+    value = {"enabled": True, "disabled": False, "value": None}
+    expected = '"enabled": true\n"disabled": false\n"value": null\n'
+    assert nanoyaml.loads(expected) == value
+    assert nanoyaml.dumps(value) == expected
+
+
+def test_booleans_and_null_work_in_nested_mappings_and_sequences():
+    value = {
+        "config": {"enabled": True, "value": None},
+        "items": [True, False, None, {"nested": True}],
+    }
+    assert nanoyaml.loads(nanoyaml.dumps(value)) == value
+
+
+def test_flow_sequences_accept_booleans_null_and_nested_sequences():
+    text = '"items": [true, false, null, ["x", true]]\n'
+    value = {"items": [True, False, None, ["x", True]]}
+    assert nanoyaml.loads(text) == value
+    assert nanoyaml.dumps(nanoyaml.loads(text)) == (
+        '"items":\n'
+        '  - true\n'
+        '  - false\n'
+        '  - null\n'
+        '  -\n'
+        '    - "x"\n'
+        '    - true\n'
+    )
+
+
+def test_plain_boolean_and_null_values_are_distinct_from_quoted_strings():
+    assert nanoyaml.loads(
+        '"a": true\n"b": "true"\n"c": null\n"d": "null"\n'
+    ) == {"a": True, "b": "true", "c": None, "d": "null"}
 
 
 def test_nested_flow_sequences_load():
@@ -163,9 +200,15 @@ def test_raw_quoted_characters_are_canonicalized_when_required():
 @pytest.mark.parametrize(
     "text",
     [
-        '"items": [true]\n',
-        '"items": [false]\n',
-        '"items": [null]\n',
+        '"items": [True]\n',
+        '"items": [FALSE]\n',
+        '"items": [Null]\n',
+        '"items": [NULL]\n',
+        '"items": [~]\n',
+        '"items": [yes]\n',
+        '"items": [no]\n',
+        '"items": [on]\n',
+        '"items": [off]\n',
         '"items": [1.0]\n',
         '"items": [-1.5]\n',
         '"items": [1e3]\n',
@@ -173,7 +216,7 @@ def test_raw_quoted_characters_are_canonicalized_when_required():
         '"items": [Infinity]\n',
         '"items": [-Infinity]\n',
         '"items": [{"a": 1}]\n',
-        '"items": [["A", true]]\n',
+        '"items": [["A", TRUE]]\n',
         '"items": [["A", {"b": 1}]]\n',
         '"items": [plain]\n',
         '"items": [\'single\']\n',
@@ -283,8 +326,17 @@ def test_whitespace_only_document_is_rejected():
         "  \n",
         "- 1\n",
         '"key": plain\n',
-        '"key": true\n',
-        '"key": null\n',
+        '"key": True\n',
+        '"key": TRUE\n',
+        '"key": False\n',
+        '"key": FALSE\n',
+        '"key": Null\n',
+        '"key": NULL\n',
+        '"key": ~\n',
+        '"key": yes\n',
+        '"key": no\n',
+        '"key": on\n',
+        '"key": off\n',
         '"key": 01\n',
         '"key": 1.0\n',
         '"key": 0x10\n',
@@ -353,13 +405,14 @@ def test_empty_mappings_remain_rejected():
 
 
 def test_unsupported_python_values_are_rejected():
-    for value in (None, True, 1.5, b"bytes", (1,), {1}, object()):
+    for value in (1.5, b"bytes", (1,), {1}, object()):
         with pytest.raises(nanoyaml.NanoYAMLError):
             nanoyaml.dumps({"bad": value})
     with pytest.raises(nanoyaml.NanoYAMLError):
         nanoyaml.dumps({1: "bad"})
-    with pytest.raises(nanoyaml.NanoYAMLError):
-        nanoyaml.dumps({"nested": ["ok", None]})
+    assert nanoyaml.dumps({"nested": ["ok", None]}) == (
+        '"nested":\n  - "ok"\n  - null\n'
+    )
 
 
 def test_dumps_is_deterministic():

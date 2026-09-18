@@ -39,8 +39,10 @@ def _validate(value: Any, path: str, active: set[int]) -> None:
     if isinstance(value, str):
         _quoted(value, path)
         return
+    if value is None:
+        return
     if isinstance(value, bool):
-        raise NanoYAMLError(f"unsupported bool at {path}")
+        return
     if isinstance(value, int):
         return
     if isinstance(value, dict):
@@ -73,6 +75,16 @@ def _validate(value: Any, path: str, active: set[int]) -> None:
     raise NanoYAMLError(f"unsupported {type(value).__name__} at {path}")
 
 
+def _scalar(value: Any, path: str) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    return _quoted(value, path)
+
+
 def _render(value: Any, indent: int, sequence_item: bool = False) -> list[str]:
     spaces = " " * indent
     if isinstance(value, dict):
@@ -91,12 +103,7 @@ def _render(value: Any, indent: int, sequence_item: bool = False) -> list[str]:
                     )
                     lines.extend(_render(child, child_indent))
             else:
-                scalar = (
-                    str(child)
-                    if isinstance(child, int)
-                    else _quoted(child, "<value>")
-                )
-                lines.append(f"{line} {scalar}")
+                lines.append(f"{line} {_scalar(child, '<value>')}")
         return lines
     if isinstance(value, list):
         lines = []
@@ -110,12 +117,7 @@ def _render(value: Any, indent: int, sequence_item: bool = False) -> list[str]:
                     lines.append(f"{spaces}-")
                     lines.extend(_render(child, indent + 2))
             else:
-                scalar = (
-                    str(child)
-                    if isinstance(child, int)
-                    else _quoted(child, "<value>")
-                )
-                lines.append(f"{spaces}- {scalar}")
+                lines.append(f"{spaces}- {_scalar(child, '<value>')}")
         return lines
     raise AssertionError("validated value is not a collection")
 
@@ -278,6 +280,12 @@ class _Parser:
             if end != len(value):
                 self.fail(number, "trailing content after quoted scalar")
             return parsed
+        if value == "true":
+            return True
+        if value == "false":
+            return False
+        if value == "null":
+            return None
         if re.fullmatch(r"0|-?[1-9][0-9]*", value):
             return int(value)
         self.fail(number, "unsupported or invalid scalar")
@@ -306,11 +314,11 @@ class _Parser:
             self.fail(number, "flow value must be a sequence")
 
         def validate(member: Any) -> None:
-            if isinstance(member, bool):
-                self.fail(number, "unsupported bool in flow sequence")
             if isinstance(member, str):
                 if any(0xD800 <= ord(character) <= 0xDFFF for character in member):
                     self.fail(number, "unsupported surrogate in flow sequence")
+                return
+            if member is None or isinstance(member, bool):
                 return
             if isinstance(member, int):
                 return

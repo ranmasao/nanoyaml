@@ -8,11 +8,12 @@ variation.
 ## Contract
 
 Supported values are non-empty mappings with string keys, sequences (including
-empty sequences), double-quoted strings, and integers. Mapping insertion order
-and sequence order are preserved. Output uses UTF-8 text, LF newlines, two-space
-indentation, a final newline, quoted strings, decimal integers, and no blank
-lines or comments. Non-empty sequences are emitted in block form; empty
-sequences are emitted as `[]`.
+empty sequences), double-quoted strings, integers, booleans, and null. Mapping
+insertion order and sequence order are preserved. Output uses UTF-8 text, LF
+newlines, two-space indentation, a final newline, quoted strings, decimal
+integers, lowercase `true`, `false`, and `null`, and no blank lines or comments.
+Non-empty sequences are emitted in block form; empty sequences are emitted as
+`[]`.
 
 Input accepts blank and whitespace-only physical lines made from spaces and
 tabs, including leading, trailing, and inter-element lines. Physical lines are
@@ -23,7 +24,7 @@ still rejected.
 In addition to block sequences, the parser accepts JSON-compatible flow sequence
 spelling, including nested sequences, when it fits on one physical line. Flow
 mappings remain unsupported. The parser intentionally rejects comments,
-unquoted strings, implicit scalar typing, floats, anchors, aliases, tags,
+unquoted strings, general YAML implicit scalar typing, floats, anchors, aliases, tags,
 directives, multiline scalars, multiline flow sequences, and empty mappings.
 NanoYAML remains intentionally much smaller than YAML and is not a general YAML
 implementation.
@@ -35,8 +36,8 @@ from nanoyaml import NanoYAMLError, dumps, loads
 ```
 
 `dumps(value)` returns canonical text. `loads(text)` returns ordinary Python
-`dict`, `list`, `str`, and `int` values. Both raise `NanoYAMLError` for values
-or syntax outside this contract.
+`dict`, `list`, `str`, `int`, `bool`, and `None` values. Both raise
+`NanoYAMLError` for values or syntax outside this contract.
 
 ## Development
 
